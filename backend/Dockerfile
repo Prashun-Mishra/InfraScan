@@ -20,8 +20,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY backend/requirements.txt /app/backend-requirements.txt
 COPY ai-model/requirements.txt /app/ai-requirements.txt
 
-RUN pip install --no-cache-dir -r /app/backend-requirements.txt \
-    && pip install --no-cache-dir -r /app/ai-requirements.txt
+# Install lightweight CPU-optimized PyTorch first (avoids downloading 2.5 GB of Nvidia CUDA wheels)
+RUN pip install --no-cache-dir --default-timeout=1000 \
+    torch torchvision \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# Install remaining backend and AI requirements
+RUN pip install --no-cache-dir --default-timeout=1000 -r /app/backend-requirements.txt \
+    && pip install --no-cache-dir --default-timeout=1000 -r /app/ai-requirements.txt
 
 # Copy source code
 COPY backend /app/backend
