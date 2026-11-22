@@ -1,0 +1,38 @@
+# InfraScan Cloud Deployment Blueprint (Render.com)
+# Milestone 4: Production Deployment Specification
+
+services:
+  # 1. FastAPI AI & Backend Web Service
+  - type: web
+    name: infrascan-backend
+    env: python
+    region: oregon
+    plan: free
+    branch: Prashun-Mishra
+    buildCommand: "pip install -r backend/requirements.txt && pip install -r ai-model/requirements.txt"
+    startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHONPATH
+        value: "ai-model:backend"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: UPLOAD_DIR
+        value: "./uploads"
+    healthCheckPath: /health
+
+  # 2. Next.js 14 Frontend Web Service
+  - type: web
+    name: infrascan-frontend
+    env: node
+    region: oregon
+    plan: free
+    branch: Prashun-Mishra
+    rootDir: frontend
+    buildCommand: "npm ci && npm run build"
+    startCommand: "npm start"
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: infrascan-backend
+          property: host
