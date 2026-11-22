@@ -23,7 +23,7 @@ import { InspectionsService } from '@/lib/api/inspections.service'
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User>(DEMO_USERS[0])
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true)
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false)
   const [currentTab, setCurrentTab] = useState<NavItemKey>('Dashboard')
   const [showWizard, setShowWizard] = useState(false)
   const [wizardInitialAsset, setWizardInitialAsset] = useState<InfrastructureAsset | null>(null)
@@ -33,14 +33,17 @@ export default function App() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('infrascan_auth_user')
-      if (stored) {
+      const token = localStorage.getItem('infrascan_auth_token')
+      if (stored && token) {
         try {
           const parsed = JSON.parse(stored)
           setCurrentUser(parsed)
           setIsAuthenticated(true)
         } catch (e) {
-          // ignore
+          setIsAuthenticated(false)
         }
+      } else {
+        setIsAuthenticated(false)
       }
     }
   }, [])
@@ -57,6 +60,7 @@ export default function App() {
     setIsAuthenticated(false)
     if (typeof window !== 'undefined') {
       localStorage.removeItem('infrascan_auth_user')
+      localStorage.removeItem('infrascan_auth_token')
     }
   }
 
