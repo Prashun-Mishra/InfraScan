@@ -39,20 +39,51 @@ export function AnalysisView({ inspectionId, onNavigate }: AnalysisViewProps) {
   )
 
   useEffect(() => {
-    if (!inspectionId) return
     let isMounted = true
-    InspectionsService.getById(inspectionId).then((data) => {
-      if (isMounted && data) {
-        setCurrentInspection(data)
-        if (data.images && data.images.length > 0) {
-          const imgWithFindings =
-            data.images.find((img) => img.findings && img.findings.length > 0) || data.images[0]
-          if (imgWithFindings.findings && imgWithFindings.findings.length > 0) {
-            setSelectedFindingId(imgWithFindings.findings[0].id)
+
+    const loadInspection = async () => {
+      try {
+        // Try loading the specific inspection first
+        if (inspectionId) {
+          const data = await InspectionsService.getById(inspectionId)
+          if (isMounted && data) {
+            setCurrentInspection(data)
+            if (data.images && data.images.length > 0) {
+              const imgWithFindings =
+                data.images.find((img) => img.findings && img.findings.length > 0) || data.images[0]
+              if (imgWithFindings.findings && imgWithFindings.findings.length > 0) {
+                setSelectedFindingId(imgWithFindings.findings[0].id)
+              }
+            }
+            return
           }
         }
+
+        // Fallback: load the most recent inspection with AI findings from the backend
+        const all = await InspectionsService.getAll()
+        if (isMounted && all.length > 0) {
+          const withFindings = all.find(
+            (insp) =>
+              insp.images &&
+              insp.images.length > 0 &&
+              insp.images.some((img) => img.findings && img.findings.length > 0)
+          )
+          const best = withFindings || all[0]
+          setCurrentInspection(best)
+          if (best.images && best.images.length > 0) {
+            const imgWithFindings =
+              best.images.find((img) => img.findings && img.findings.length > 0) || best.images[0]
+            if (imgWithFindings.findings && imgWithFindings.findings.length > 0) {
+              setSelectedFindingId(imgWithFindings.findings[0].id)
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('AnalysisView: backend load notice:', err)
       }
-    })
+    }
+
+    loadInspection()
     return () => {
       isMounted = false
     }
@@ -60,7 +91,10 @@ export function AnalysisView({ inspectionId, onNavigate }: AnalysisViewProps) {
 
   const currentImage =
     currentInspection.images?.find(
-      (img) => (img.findings && img.findings.length > 0) || img.annotatedUrl || img.maskUrl
+      (img) => img.findings && img.findings.length > 0
+    ) ||
+    currentInspection.images?.find(
+      (img) => img.annotatedUrl || img.maskUrl
     ) ||
     currentInspection.images?.[0] || {
       id: 'placeholder',
