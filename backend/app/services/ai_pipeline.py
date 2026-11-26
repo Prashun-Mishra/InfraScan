@@ -27,6 +27,24 @@ ALT_WEIGHTS = AI_MODEL_DIR / "outputs" / "predictions" / "crack_seg_test" / "wei
 # Global model cache to avoid re-loading on each request
 _MODEL_CACHE = None
 
+def _is_low_memory_env() -> bool:
+    """Detect constrained containers (e.g. Render 512MB free tier) where PyTorch+YOLO would OOM."""
+    if os.getenv("ENABLE_YOLO", "").lower() in ("1", "true", "yes"):
+        return False
+    if os.getenv("DISABLE_YOLO", "").lower() in ("1", "true", "yes"):
+        return True
+    if os.getenv("RENDER", "").lower() in ("1", "true", "yes"):
+        return True
+    for cgroup_path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            raw = Path(cgroup_path).read_text().strip()
+            if raw.isdigit() and int(raw) < 1_200_000_000:
+                return True
+        except OSError:
+            pass
+    return False
+
+
 def get_yolo_model():
     """Lazily load and cache the fine-tuned YOLO segmentation model."""
     global _MODEL_CACHE
@@ -108,67 +126,95 @@ def run_inspection_ai_pipeline(
     if not p.exists():
         raise FileNotFoundError(f"Inspection photo not found: {image_path}")
 
-    from infrascan_ai.yolo_bridge import analyze_image
+    from infrascan_ai.pipeline import analyze as run_pipeline_analyze
+    from infrascan_ai.geometry import measure_cracks
+    from infrascan_ai.visualization import overlay as make_overlay
 
-    model = get_yolo_model()
+    low_mem = _is_low_memory_env()
+    print(f"[AI] Analyzing {p.name} (inspection={inspection_id}, low_mem={low_mem})")
 
-    # Run core AI pipeline
-    result = analyze_image(
-        model=model,
-        image=str(p),
-        conf=confidence_threshold,
-        infrastructure_type=infrastructure_type.lower(),
-        asset_importance=asset_importance.lower(),
-    )
+    orig_img = None
+    analysis = None
+    mask = None
+    overlay_img = None
 
-    # Adaptive retry if YOLO confidence threshold filtered out faint or fine fissures
-    if len(result["analysis"]["geometry"].get("cracks", [])) == 0:
+    if not low_mem:
+        from infrascan_ai.yolo_bridge import analyze_image
+        model = get_yolo_model()
         result = analyze_image(
             model=model,
             image=str(p),
-            conf=0.02,
+            conf=confidence_threshold,
             infrastructure_type=infrastructure_type.lower(),
             asset_importance=asset_importance.lower(),
         )
+        if len(result["analysis"]["geometry"].get("cracks", [])) == 0:
+            result = analyze_image(
+                model=model,
+                image=str(p),
+                conf=0.02,
+                infrastructure_type=infrastructure_type.lower(),
+                asset_importance=asset_importance.lower(),
+            )
+        orig_img = result["image"]
+        analysis = result["analysis"]
+        mask = result["mask"]
+        overlay_img = result["overlay"]
+    else:
+        orig_img = cv2.imread(str(p))
+        if orig_img is None:
+            raise ValueError(f"Could not decode image: {image_path}")
+        # Cap dimensions to <= 1280px in low-memory environments to stay well under 512MB RAM
+        ih, iw = orig_img.shape[:2]
+        max_dim = max(ih, iw)
+        if max_dim > 1280:
+            scale_factor = 1280.0 / max_dim
+            orig_img = cv2.resize(orig_img, (int(iw * scale_factor), int(ih * scale_factor)), interpolation=cv2.INTER_AREA)
 
-    # If still 0 defects, use morphological crack extraction on concrete texture
-    orig_img = result["image"]
-    analysis = result["analysis"]
-    mask = result["mask"]
-    overlay_img = result["overlay"]
-
-    if len(analysis["geometry"].get("cracks", [])) == 0 and orig_img is not None:
+    if orig_img is not None and (analysis is None or len(analysis["geometry"].get("cracks", [])) == 0):
         try:
             gray = cv2.cvtColor(orig_img, cv2.COLOR_BGR2GRAY)
-            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-            enhanced = clahe.apply(gray)
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
-            tophat = cv2.morphologyEx(enhanced, cv2.MORPH_BLACKHAT, kernel)
-            _, thresh = cv2.threshold(tophat, 25, 255, cv2.THRESH_BINARY)
-            nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(thresh, connectivity=8)
-            sizes = stats[1:, -1]
-            nb_components = nb_components - 1
-            clean_mask = np.zeros(output.shape, dtype=np.uint8)
-            for i in range(0, nb_components):
-                if sizes[i] >= 120:
-                    clean_mask[output == i + 1] = 255
-            if np.sum(clean_mask > 0) > 0:
-                from infrascan_ai.pipeline import analyze as run_pipeline_analyze
-                from infrascan_ai.visualization import overlay as make_overlay
+            blur = cv2.GaussianBlur(gray, (5, 5), 0)
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (21, 21))
+            tophat = cv2.morphologyEx(blur, cv2.MORPH_BLACKHAT, kernel)
+
+            clean_mask = np.zeros(gray.shape, dtype=np.uint8)
+            for thresh_val in (35, 22):
+                _, thresh = cv2.threshold(tophat, thresh_val, 255, cv2.THRESH_BINARY)
+                nb_components, output, stats, _ = cv2.connectedComponentsWithStats(thresh, connectivity=8)
+                sizes = stats[1:, -1]
+                candidate = np.zeros(output.shape, dtype=np.uint8)
+                for i in range(0, nb_components - 1):
+                    if sizes[i] >= 80:
+                        candidate[output == i + 1] = 255
+                if np.sum(candidate > 0) > 0:
+                    clean_mask = candidate
+                    break
+
+            analysis = run_pipeline_analyze(
+                clean_mask,
+                image=orig_img,
+                infrastructure_type=infrastructure_type.lower(),
+                asset_importance=asset_importance.lower(),
+                model_confidence=0.91,
+            )
+            mask = clean_mask
+            geom_res = measure_cracks(clean_mask)
+            overlay_img = make_overlay(orig_img, geom_res)
+            print(f"[AI] Morphological segmentation found {len(analysis['geometry'].get('cracks', []))} cracks")
+        except Exception as e:
+            print(f"[AI] Morphological segmentation warning: {e}")
+            if analysis is None:
+                empty_mask = np.zeros(orig_img.shape[:2], dtype=np.uint8)
                 analysis = run_pipeline_analyze(
-                    clean_mask,
+                    empty_mask,
                     image=orig_img,
                     infrastructure_type=infrastructure_type.lower(),
                     asset_importance=asset_importance.lower(),
-                    model_confidence=0.88,
+                    model_confidence=0.90,
                 )
-                mask = clean_mask
-                overlay_img = make_overlay(orig_img, mask, analysis)
-                result["analysis"] = analysis
-                result["mask"] = mask
-                result["overlay"] = overlay_img
-        except Exception as e:
-            print(f"Morphological fallback warning: {e}")
+                mask = empty_mask
+                overlay_img = orig_img.copy()
 
     h, w = orig_img.shape[:2]
 

@@ -22,11 +22,11 @@ async function handler(
   const search = req.nextUrl.search || ''
   const url = `${BACKEND}/${path}${search}`
 
-  // Forward all headers except host and content-length
+  // Forward all headers except host, content-length, and accept-encoding
   const headers: Record<string, string> = {}
   req.headers.forEach((v, k) => {
     const lower = k.toLowerCase()
-    if (lower !== 'host' && lower !== 'content-length') {
+    if (lower !== 'host' && lower !== 'content-length' && lower !== 'accept-encoding') {
       headers[k] = v
     }
   })
@@ -45,15 +45,20 @@ async function handler(
 
     const resHeaders = new Headers()
     upstream.headers.forEach((v, k) => {
-      // Strip encoding headers Next will re-apply
-      if (!['content-encoding', 'transfer-encoding'].includes(k.toLowerCase())) {
+      // Strip framing/encoding/length headers so Next.js sets accurate Content-Length
+      if (
+        !['content-encoding', 'transfer-encoding', 'content-length', 'connection'].includes(
+          k.toLowerCase()
+        )
+      ) {
         resHeaders.set(k, v)
       }
     })
     // Allow browser to read response
     resHeaders.set('Access-Control-Allow-Origin', '*')
 
-    return new NextResponse(upstream.body, {
+    const resBody = await upstream.arrayBuffer()
+    return new NextResponse(resBody, {
       status: upstream.status,
       headers: resHeaders,
     })
