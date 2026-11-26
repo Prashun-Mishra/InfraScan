@@ -2,24 +2,19 @@
 # Milestone 4: Production Deployment Specification
 
 services:
-  # 1. FastAPI AI & Backend Web Service
+  # 1. FastAPI AI & Backend Web Service (Docker with OpenCV/libGL + YOLOv11)
   - type: web
     name: infrascan-backend
-    env: python
+    runtime: docker
+    dockerfilePath: ./Dockerfile
     region: oregon
     plan: free
     branch: Prashun-Mishra
-    buildCommand: "pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && pip install --no-cache-dir -r backend/requirements.txt && pip install --no-cache-dir -r ai-model/requirements.txt"
-    startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.9"
-      - key: PYTHONPATH
-        value: "ai-model:backend"
       - key: SECRET_KEY
         generateValue: true
       - key: UPLOAD_DIR
-        value: "./uploads"
+        value: "/app/backend/uploads"
     healthCheckPath: /health
 
   # 2. Next.js 14 Frontend Web Service

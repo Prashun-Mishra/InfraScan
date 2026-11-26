@@ -1,9 +1,11 @@
 // Base client with API URL configuration and demo fallback
-const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const rawApiUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').trim().replace(/\/+$/, '')
 export const API_BASE_URL =
   rawApiUrl.startsWith('http://') || rawApiUrl.startsWith('https://')
     ? rawApiUrl
-    : `https://${rawApiUrl}`
+    : rawApiUrl.includes('.')
+      ? `https://${rawApiUrl}`
+      : `https://${rawApiUrl}.onrender.com`
 
 export const IS_DEMO_MODE = false
 
