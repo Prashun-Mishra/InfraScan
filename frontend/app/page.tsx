@@ -92,17 +92,17 @@ export default function App() {
       const created = await InspectionsService.create(inspectionData)
       setActiveInspectionId(created.id)
 
-      if (files && files.length > 0) {
-        await InspectionsService.analyzeImage(created.id, files[0])
+      if (!files || files.length === 0) {
+        throw new Error('Select an inspection image before starting analysis.')
       }
+      await InspectionsService.analyzeImage(created.id, files[0])
+      setShowPreprocessing(false)
+      setCurrentTab('Analysis Results')
     } catch (err) {
-      console.warn('Backend inference sync notice (fallback to demo data if offline):', err)
+      setShowPreprocessing(false)
+      const message = err instanceof Error ? err.message : 'Unknown backend error'
+      window.alert(`Live crack analysis failed: ${message}`)
     }
-  }
-
-  const handlePreprocessingComplete = () => {
-    setShowPreprocessing(false)
-    setCurrentTab('Analysis Results')
   }
 
   // Render Login Screen if not authenticated
@@ -179,7 +179,7 @@ export default function App() {
 
       {/* Live Preprocessing Pipeline Status Modal */}
       {showPreprocessing && (
-        <PreprocessingStatusModal onComplete={handlePreprocessingComplete} />
+        <PreprocessingStatusModal />
       )}
     </Shell>
   )

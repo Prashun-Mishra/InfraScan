@@ -20,9 +20,10 @@ AI_MODEL_DIR = WORKSPACE_DIR / "ai-model"
 if str(AI_MODEL_DIR) not in sys.path:
     sys.path.insert(0, str(AI_MODEL_DIR))
 
-# Weights path
+# Prefer the crack-trained checkpoint. The generic YOLO checkpoint has no crack class.
+TRAINED_WEIGHTS = AI_MODEL_DIR / "outputs" / "predictions" / "crack_seg_test-2" / "weights" / "best.pt"
+ALT_TRAINED_WEIGHTS = AI_MODEL_DIR / "outputs" / "predictions" / "crack_seg_test" / "weights" / "best.pt"
 DEFAULT_WEIGHTS = AI_MODEL_DIR / "src" / "yolo11n-seg.pt"
-ALT_WEIGHTS = AI_MODEL_DIR / "outputs" / "predictions" / "crack_seg_test" / "weights" / "best.pt"
 
 # Global model cache to avoid re-loading on each request
 _MODEL_CACHE = None
@@ -53,12 +54,14 @@ def get_yolo_model():
 
     from infrascan_ai.yolo_bridge import load_model
 
-    weights_path = DEFAULT_WEIGHTS
-    if not weights_path.exists() and ALT_WEIGHTS.exists():
-        weights_path = ALT_WEIGHTS
-    elif not weights_path.exists():
-        # Fallback to local root or pretrained checkpoint
-        weights_path = Path("yolo11n-seg.pt")
+    configured_weights = os.getenv("YOLO_WEIGHTS")
+    if configured_weights:
+        weights_path = Path(configured_weights).expanduser()
+    else:
+        weights_path = next(
+            (path for path in (TRAINED_WEIGHTS, ALT_TRAINED_WEIGHTS) if path.exists()),
+            DEFAULT_WEIGHTS,
+        )
 
     print(f"Loading InfraScan YOLO-seg weights from {weights_path}...")
     _MODEL_CACHE = load_model(weights_path)

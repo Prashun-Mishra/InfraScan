@@ -47,17 +47,12 @@ export const InspectionsService = {
       preprocessingStage: 'Completed',
     }
 
-    try {
-      const res = await apiFetch<Inspection>('/api/v1/inspections', {
-        method: 'POST',
-        body: JSON.stringify(newInsp),
-      })
-      localInspections = [res.data, ...localInspections]
-      return res.data
-    } catch {
-      localInspections = [newInsp, ...localInspections]
-      return newInsp
-    }
+    const res = await apiFetch<Inspection>('/api/v1/inspections', {
+      method: 'POST',
+      body: JSON.stringify(newInsp),
+    })
+    localInspections = [res.data, ...localInspections]
+    return res.data
   },
 
   async analyzeImage(inspectionId: string, file: File): Promise<any> {
