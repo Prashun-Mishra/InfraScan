@@ -145,7 +145,7 @@ async def preprocess_image_endpoint(
     return result
 
 @router.post("/{inspection_id}/analyze")
-async def analyze_inspection_image(
+def analyze_inspection_image(
     inspection_id: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
