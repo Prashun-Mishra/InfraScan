@@ -22,9 +22,14 @@ app = FastAPI(
 )
 
 # CORS Middleware setup
+# Merge base origins with any extra ones from env var
+_cors_origins = list(settings.BACKEND_CORS_ORIGINS)
+if settings.CORS_ORIGINS_EXTRA:
+    _cors_origins += [o.strip() for o in settings.CORS_ORIGINS_EXTRA.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

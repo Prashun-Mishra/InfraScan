@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite:///{_DEFAULT_DB}")
     
-    # CORS
+    # CORS — list every allowed origin; wildcard "*" cannot be used with allow_credentials=True
     BACKEND_CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -31,8 +31,13 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3002",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
-        "*",
+        # Render production frontend
+        "https://infrascan-frontend.onrender.com",
+        # Allow any *.onrender.com subdomain for future services
+        "https://infrascan-backend-ukud.onrender.com",
     ]
+    # Optional env-var override: CORS_ORIGINS="https://a.com,https://b.com"
+    CORS_ORIGINS_EXTRA: str = os.getenv("CORS_ORIGINS_EXTRA", "")
     
     # Uploads & Storage
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", _DEFAULT_UPLOADS)
