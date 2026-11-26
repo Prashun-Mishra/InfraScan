@@ -7,6 +7,14 @@ export const API_BASE_URL =
       ? `https://${rawApiUrl}`
       : `https://${rawApiUrl}.onrender.com`
 
+// In production (Render), route all API calls through the Next.js proxy to avoid CORS.
+// In development, call the backend directly.
+const isProduction = typeof window !== 'undefined'
+  ? window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+  : process.env.NODE_ENV === 'production'
+
+export const API_CALL_BASE = isProduction ? '/api/proxy' : API_BASE_URL
+
 export const IS_DEMO_MODE = false
 
 export interface ApiResponse<T> {
@@ -26,7 +34,7 @@ export function getFullMediaUrl(path?: string): string {
   ) {
     return path
   }
-  return `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`
+  return `${API_CALL_BASE}${path.startsWith('/') ? '' : '/'}${path}`
 }
 
 export async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<ApiResponse<T>> {
@@ -48,7 +56,7 @@ export async function apiFetch<T>(endpoint: string, options?: RequestInit): Prom
   }
 
   try {
-    const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const res = await fetch(`${API_CALL_BASE}${endpoint}`, {
       ...options,
       headers,
     })

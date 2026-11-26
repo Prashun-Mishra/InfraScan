@@ -18,7 +18,7 @@ import { DEMO_REPORTS } from '@/lib/api/mock-data'
 import { InspectionReport, Inspection } from '@/types'
 import { ReportsService } from '@/lib/api/reports.service'
 import { InspectionsService } from '@/lib/api/inspections.service'
-import { API_BASE_URL } from '@/lib/api/client'
+import { API_CALL_BASE } from '@/lib/api/client'
 
 interface ReportsViewProps {
   targetInspectionId?: string
@@ -68,7 +68,7 @@ export function ReportsView({ targetInspectionId }: ReportsViewProps) {
 
   const handleDownloadPdf = () => {
     if (selectedReport) {
-      window.open(`${API_BASE_URL}/api/v1/reports/${selectedReport.id}/download`, '_blank')
+      window.open(`${API_CALL_BASE}/api/v1/reports/${selectedReport.id}/download`, '_blank')
     }
   }
 

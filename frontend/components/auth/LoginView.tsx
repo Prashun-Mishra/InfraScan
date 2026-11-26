@@ -13,7 +13,7 @@ import {
   CheckCircle2,
 } from 'lucide-react'
 import { User, UserRole } from '@/types'
-import { API_BASE_URL } from '@/lib/api/client'
+import { API_CALL_BASE } from '@/lib/api/client'
 
 interface LoginViewProps {
   onLogin: (user: User) => void
@@ -36,7 +36,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
     setIsLoading(true)
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
+      const res = await fetch(`${API_CALL_BASE}/api/v1/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
