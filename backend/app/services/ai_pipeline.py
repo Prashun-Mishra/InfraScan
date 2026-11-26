@@ -140,6 +140,7 @@ def run_inspection_ai_pipeline(
     analysis = None
     mask = None
     overlay_img = None
+    inference_confidence = 0.0
 
     if not low_mem:
         from infrascan_ai.yolo_bridge import analyze_image
@@ -185,10 +186,15 @@ def run_inspection_ai_pipeline(
             for thresh_val in (35, 22):
                 _, thresh = cv2.threshold(tophat, thresh_val, 255, cv2.THRESH_BINARY)
                 nb_components, output, stats, _ = cv2.connectedComponentsWithStats(thresh, connectivity=8)
-                sizes = stats[1:, -1]
+                min_component_area = max(500, int(gray.size * 0.0004))
                 candidate = np.zeros(output.shape, dtype=np.uint8)
                 for i in range(0, nb_components - 1):
-                    if sizes[i] >= 80:
+                    component_width = stats[i + 1, cv2.CC_STAT_WIDTH]
+                    component_height = stats[i + 1, cv2.CC_STAT_HEIGHT]
+                    if (
+                        stats[i + 1, cv2.CC_STAT_AREA] >= min_component_area
+                        and max(component_width, component_height) >= 32
+                    ):
                         candidate[output == i + 1] = 255
                 if np.sum(candidate > 0) > 0:
                     clean_mask = candidate
@@ -199,7 +205,7 @@ def run_inspection_ai_pipeline(
                 image=orig_img,
                 infrastructure_type=infrastructure_type.lower(),
                 asset_importance=asset_importance.lower(),
-                model_confidence=0.91,
+                model_confidence=inference_confidence,
             )
             mask = clean_mask
             geom_res = measure_cracks(clean_mask)
@@ -277,8 +283,7 @@ def run_inspection_ai_pipeline(
 
         finding_id = f"FND-{inspection_id[-4:] if len(inspection_id) >= 4 else '0248'}-{idx+1:02d}"
 
-        raw_c = float(analysis["meta"].get("model_confidence", 0.92))
-        calibrated_conf = round(max(0.86, min(0.96, raw_c if raw_c >= 0.5 else 0.86 + (raw_c * 1.1))), 2)
+        model_confidence = float(analysis["meta"].get("model_confidence", 0.0))
 
         finding_obj = {
             "id": finding_id,
@@ -286,7 +291,7 @@ def run_inspection_ai_pipeline(
             "category": "Cracks",
             "crackType": crack_type,
             "bbox": bbox_pct,
-            "confidenceScore": calibrated_conf,
+            "confidenceScore": round(model_confidence, 2),
             "severity": crack_sev,
             "measurements": {
                 "crackLengthPx": round(c["length_px"], 1),

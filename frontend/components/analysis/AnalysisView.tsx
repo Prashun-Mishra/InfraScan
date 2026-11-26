@@ -455,7 +455,7 @@ export function AnalysisView({ inspectionId, onNavigate }: AnalysisViewProps) {
                   onClick={() => setSelectedFindingId(f.id)}
                 >
                   <span className="bbox-label">
-                    {f.category} · {(f.confidenceScore * 100).toFixed(0)}%
+                    {f.category} · {f.confidenceScore > 0 ? `${(f.confidenceScore * 100).toFixed(0)}%` : 'Heuristic'}
                   </span>
                 </div>
               ))}
@@ -505,7 +505,7 @@ export function AnalysisView({ inspectionId, onNavigate }: AnalysisViewProps) {
                   <div className="text-[11px] text-slate-500 flex justify-between mt-1">
                     <span>Crack Type: {f.crackType || 'Shear/Fissure'}</span>
                     <span className="font-semibold text-blue-600">
-                      {(f.confidenceScore * 100).toFixed(1)}% Conf.
+                      {f.confidenceScore > 0 ? `${(f.confidenceScore * 100).toFixed(1)}% Conf.` : 'Heuristic · unscored'}
                     </span>
                   </div>
                 </div>
