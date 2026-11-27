@@ -1,34 +1,35 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import {
-  Activity,
-  CheckCircle2,
-  Cpu,
-  Database,
-  Gauge,
-  Layers,
-  ShieldCheck,
-  Info,
-  ShieldAlert,
-} from 'lucide-react'
-import { DEMO_MODELS } from '@/lib/api/mock-data'
+import { Activity, Cpu, Database, ShieldAlert } from 'lucide-react'
+import { apiFetch } from '@/lib/api/client'
 import { ModelVersion } from '@/types'
-import { ModelsService } from '@/lib/api/models.service'
 
 export function ModelPerformanceView() {
-  const [models, setModels] = useState<ModelVersion[]>(DEMO_MODELS)
-  const [selectedModel, setSelectedModel] = useState<ModelVersion>(DEMO_MODELS[0])
+  const [models, setModels] = useState<ModelVersion[]>([])
+  const [dataStatus, setDataStatus] = useState<'loading' | 'live' | 'error'>('loading')
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
   useEffect(() => {
-    ModelsService.getAll()
-      .then((data) => {
-        if (data && data.length > 0) {
-          setModels(data)
-          setSelectedModel(data[0])
-        }
-      })
-      .catch(() => {})
+    let active = true
+    const loadModels = async () => {
+      try {
+        const response = await apiFetch<ModelVersion[]>('/api/v1/models', { cache: 'no-store' })
+        if (!active) return
+        setModels(response.data)
+        setDataStatus('live')
+        setLastUpdated(new Date())
+      } catch {
+        if (active) setDataStatus('error')
+      }
+    }
+
+    loadModels()
+    const intervalId = window.setInterval(loadModels, 30_000)
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
+    }
   }, [])
 
   return (
@@ -37,180 +38,84 @@ export function ModelPerformanceView() {
       <section className="page-heading">
         <div>
           <p className="eyebrow">COMPUTER VISION MODEL REGISTRY & AI GOVERNANCE</p>
-          <h1>Model Performance & Verification</h1>
+          <h1>Model Registry & Evaluation</h1>
           <p>
-            Track model validation benchmarks, segmentation IoU metrics, benchmark datasets, and certified weights.
+            Registry metadata is live. Verified benchmark results are unavailable until evaluation runs are connected.
           </p>
         </div>
       </section>
 
-      {/* AI Governance Mandatory Disclaimer (§ 17) */}
-      <div className="mt-4 bg-slate-100 border border-slate-200 p-3.5 rounded-lg flex items-start gap-2.5 text-xs text-slate-700 leading-relaxed">
-        <ShieldCheck className="w-5 h-5 text-blue-600 flex-none mt-0.5" />
+      <div className="context-bar mt-4">
+        <div className="range"><Activity /><span>Backend model registry</span></div>
+        <span className="sample-note">
+          {dataStatus === 'loading'
+            ? 'Connecting to backend…'
+            : dataStatus === 'error'
+              ? `Backend unavailable${lastUpdated ? ` · showing data from ${lastUpdated.toLocaleTimeString()}` : ''}`
+              : `Updated ${lastUpdated?.toLocaleTimeString()} · refreshes every 30 seconds`}
+        </span>
+      </div>
+
+      <div className="mt-4 bg-amber-50 border border-amber-200 p-3.5 rounded-lg flex items-start gap-2.5 text-xs text-amber-900 leading-relaxed">
+        <ShieldAlert className="w-5 h-5 text-amber-600 flex-none mt-0.5" />
         <div>
-          <strong>AI TRANSPARENCY & VERIFICATION PROTOCOL:</strong> Model evaluation metrics shown
-          reflect certified validation benchmarks measured against verified ground-truth test sets
-          (CivilCrack-National-v3). Synthetic or exaggerated claims are prohibited under enterprise
-          structural safety guidelines.
+          <strong>No verified benchmark results are connected.</strong> Registry entries may include seeded demo metadata.
+          Precision, recall, IoU, confusion matrices, and inference latency are not reported as facts here.
         </div>
       </div>
 
-      {/* Model Selection Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
         {models.map((model) => (
           <div
             key={model.id}
-            className={`bg-white border rounded-xl p-5 cursor-pointer transition ${
-              selectedModel.id === model.id
-                ? 'border-blue-500 shadow-md ring-1 ring-blue-500'
-                : 'border-slate-200 hover:border-slate-300'
-            }`}
-            onClick={() => setSelectedModel(model)}
+            className="bg-white border border-slate-200 rounded-lg p-5"
           >
             <div className="flex justify-between items-start mb-2">
               <span className="badge badge-blue">{model.modelType}</span>
-              <span
-                className={`badge ${
-                  model.deploymentStatus === 'Active' ? 'badge-teal' : 'badge-amber'
-                }`}
-              >
-                {model.deploymentStatus === 'Active' ? 'Production Active' : 'Canary Validation'}
-              </span>
+              <span className="badge badge-amber">Registry: {model.deploymentStatus}</span>
             </div>
             <h3 className="font-bold text-sm text-slate-900 mb-1">{model.name}</h3>
             <p className="text-xs text-slate-500 font-mono mb-3">Version {model.version}</p>
 
             <div className="text-xs space-y-1.5 text-slate-600 border-t border-slate-100 pt-3">
               <div className="flex justify-between">
-                <span>Evaluation Date:</span>
-                <b className="font-mono">{model.evaluationDate}</b>
+                <span>Stored evaluation date:</span>
+                <b className="font-mono">{model.evaluationDate || 'Not recorded'}</b>
               </div>
               <div className="flex justify-between">
-                <span>Dataset:</span>
-                <b>{model.datasetReference}</b>
+                <span>Registry record ID:</span>
+                <b className="font-mono">{model.id}</b>
               </div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Metrics Dashboard for Selected Model */}
-      <div className="mt-6 space-y-5">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">
-          Validation Benchmarks · {selectedModel.name}
-        </h2>
+      {models.length === 0 && (
+        <div className="panel mt-5 text-sm text-slate-600">
+          {dataStatus === 'loading'
+            ? 'Loading model registry…'
+            : dataStatus === 'error'
+              ? 'The model registry could not be loaded from the backend.'
+              : 'No model registry records are available.'}
+        </div>
+      )}
 
-        {/* Metric Cards Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="stat-card">
-            <div className="stat-copy">
-              <p>Precision (mAP@50)</p>
-              <strong>{(selectedModel.metrics.precision * 100).toFixed(1)}%</strong>
-              <span className="positive">Ground-truth test set</span>
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-copy">
-              <p>Recall (Sensitivity)</p>
-              <strong>{(selectedModel.metrics.recall * 100).toFixed(1)}%</strong>
-              <span className="positive">Minimizes false negatives</span>
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-copy">
-              <p>F1-Score Metric</p>
-              <strong>{selectedModel.metrics.f1Score.toFixed(3)}</strong>
-              <span className="positive">Harmonic precision/recall</span>
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-copy">
-              <p>Segmentation IoU</p>
-              <strong>{(selectedModel.metrics.iouSegmentation * 100).toFixed(1)}%</strong>
-              <span className="positive">Intersection-over-Union</span>
-            </div>
+      <div className="panel mt-5">
+        <div className="panel-head">
+          <div>
+            <h2>Evaluation results</h2>
+            <p>Only metrics generated by a traceable test run should appear here.</p>
           </div>
         </div>
-
-        {/* Confusion Matrix Simulation */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-4">
-          <div className="panel">
-            <div className="panel-head mb-4">
-              <div>
-                <h2>Normalized Confusion Matrix</h2>
-                <p>Crack Detection vs Negative Structural Concrete Background</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-center text-xs">
-              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
-                <span className="text-[10px] text-emerald-600 font-bold block uppercase">
-                  True Positive (Crack)
-                </span>
-                <strong className="text-xl text-emerald-800">94.2%</strong>
-                <p className="text-slate-500 text-[10px] mt-1">Accurately detected defects</p>
-              </div>
-
-              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                <span className="text-[10px] text-red-600 font-bold block uppercase">
-                  False Positive (Stain)
-                </span>
-                <strong className="text-xl text-red-800">5.8%</strong>
-                <p className="text-slate-500 text-[10px] mt-1">Water mark misclassification</p>
-              </div>
-
-              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                <span className="text-[10px] text-amber-600 font-bold block uppercase">
-                  False Negative (Miss)
-                </span>
-                <strong className="text-xl text-amber-800">8.2%</strong>
-                <p className="text-slate-500 text-[10px] mt-1">Hairline fissure below 0.1mm</p>
-              </div>
-
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <span className="text-[10px] text-blue-600 font-bold block uppercase">
-                  True Negative (Sound)
-                </span>
-                <strong className="text-xl text-blue-800">91.8%</strong>
-                <p className="text-slate-500 text-[10px] mt-1">Sound surface rejection</p>
-              </div>
-            </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-slate-700">
+          <div className="bg-slate-50 p-4 rounded-lg flex items-start gap-3">
+            <Database className="w-4 h-4 text-slate-500 mt-0.5" />
+            <p>No evaluation-run records, test-set provenance, or checkpoint hashes are exposed by the current API.</p>
           </div>
-
-          {/* Dataset Governance Card */}
-          <div className="panel text-xs space-y-3">
-            <div className="panel-head">
-              <div>
-                <h2>Training & Validation Governance</h2>
-                <p>Sensor provenance & dataset integrity</p>
-              </div>
-            </div>
-
-            <div className="space-y-2 text-slate-700">
-              <div className="bg-slate-50 p-3 rounded-lg">
-                <span className="text-[10px] text-slate-400 font-bold block">
-                  TRAINING DATASET REFERENCE
-                </span>
-                <b className="text-slate-900">{selectedModel.datasetVersion}</b>
-              </div>
-              <div className="bg-slate-50 p-3 rounded-lg">
-                <span className="text-[10px] text-slate-400 font-bold block">
-                  SEGMENTATION ARCHITECTURE
-                </span>
-                <b className="text-slate-900">
-                  Feature Pyramid Network with Cross-Stage Partial Bottlenecks
-                </b>
-              </div>
-              <div className="bg-slate-50 p-3 rounded-lg">
-                <span className="text-[10px] text-slate-400 font-bold block">
-                  DEPLOYMENT LATENCY TARGET
-                </span>
-                <b className="text-slate-900">&lt; 200ms per 4K tile inference on NVIDIA T4/A10G</b>
-              </div>
-            </div>
+          <div className="bg-slate-50 p-4 rounded-lg flex items-start gap-3">
+            <Cpu className="w-4 h-4 text-slate-500 mt-0.5" />
+            <p>Inference latency and runtime hardware are not instrumented yet, so no live performance figures are shown.</p>
           </div>
         </div>
       </div>

@@ -10,30 +10,12 @@ import {
   ClipboardCheck,
   Clock3,
   Download,
-  Filter,
-  MoreHorizontal,
   Plus,
   Search,
-  CheckCircle2,
-  Cloud,
 } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { DEMO_ASSETS, DEMO_INSPECTIONS } from '@/lib/api/mock-data'
+import { apiFetch } from '@/lib/api/client'
 import { Inspection, InfrastructureAsset } from '@/types'
-import { InspectionsService } from '@/lib/api/inspections.service'
-import { AssetsService } from '@/lib/api/assets.service'
-
-const activityData = [
-  { month: 'Jan', inspections: 18 },
-  { month: 'Feb', inspections: 24 },
-  { month: 'Mar', inspections: 21 },
-  { month: 'Apr', inspections: 32 },
-  { month: 'May', inspections: 28 },
-  { month: 'Jun', inspections: 38 },
-  { month: 'Jul', inspections: 34 },
-  { month: 'Aug', inspections: 46 },
-  { month: 'Sep', inspections: 42 },
-]
 
 interface DashboardViewProps {
   onNavigate: (tab: any, params?: any) => void
@@ -41,22 +23,37 @@ interface DashboardViewProps {
 }
 
 export function DashboardView({ onNavigate, onOpenNewInspection }: DashboardViewProps) {
-  const [inspections, setInspections] = useState<Inspection[]>(DEMO_INSPECTIONS)
-  const [assets, setAssets] = useState<InfrastructureAsset[]>(DEMO_ASSETS)
+  const [inspections, setInspections] = useState<Inspection[]>([])
+  const [assets, setAssets] = useState<InfrastructureAsset[]>([])
+  const [dataStatus, setDataStatus] = useState<'loading' | 'live' | 'error'>('loading')
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [search, setSearch] = useState('')
   const [selectedSeverity, setSelectedSeverity] = useState<string>('ALL')
 
   useEffect(() => {
-    InspectionsService.getAll()
-      .then((data) => {
-        if (data && data.length > 0) setInspections(data)
-      })
-      .catch(() => {})
-    AssetsService.getAll()
-      .then((data) => {
-        if (data && data.length > 0) setAssets(data)
-      })
-      .catch(() => {})
+    let active = true
+    const loadLiveData = async () => {
+      try {
+        const [inspectionResponse, assetResponse] = await Promise.all([
+          apiFetch<Inspection[]>('/api/v1/inspections', { cache: 'no-store' }),
+          apiFetch<InfrastructureAsset[]>('/api/v1/assets', { cache: 'no-store' }),
+        ])
+        if (!active) return
+        setInspections(inspectionResponse.data)
+        setAssets(assetResponse.data)
+        setDataStatus('live')
+        setLastUpdated(new Date())
+      } catch {
+        if (active) setDataStatus('error')
+      }
+    }
+
+    loadLiveData()
+    const intervalId = window.setInterval(loadLiveData, 15_000)
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
+    }
   }, [])
 
   const filtered = inspections.filter((item) => {
@@ -75,11 +72,35 @@ export function DashboardView({ onNavigate, onOpenNewInspection }: DashboardView
     (i) => i.priority === 'High' || i.priority === 'Urgent'
   ).length
 
-  const criticalCount = inspections.filter((i) => i.overallSeverity === 'Critical').length
-  const severeCount = inspections.filter((i) => i.overallSeverity === 'Severe').length
-  const moderateCount = inspections.filter((i) => i.overallSeverity === 'Moderate').length
-  const minorCount = inspections.filter((i) => i.overallSeverity === 'Minor').length
-  const totalFindings = inspections.reduce((acc, i) => acc + (i.findingsCount || 1), 0)
+  const findings = inspections.flatMap((inspection) =>
+    (inspection.images || []).flatMap((image) => image.findings || [])
+  )
+  const criticalCount = findings.filter((finding) => finding.severity === 'Critical').length
+  const severeCount = findings.filter((finding) => finding.severity === 'Severe').length
+  const moderateCount = findings.filter((finding) => finding.severity === 'Moderate').length
+  const minorCount = findings.filter((finding) => finding.severity === 'Minor').length
+  const totalFindings = findings.length
+
+  const activityData = Array.from({ length: 9 }, (_, index) => {
+    const monthDate = new Date()
+    monthDate.setDate(1)
+    monthDate.setMonth(monthDate.getMonth() - (8 - index))
+    return {
+      month: new Intl.DateTimeFormat('en', { month: 'short' }).format(monthDate),
+      inspections: inspections.filter((inspection) => {
+        const date = new Date(inspection.date)
+        return date.getFullYear() === monthDate.getFullYear() && date.getMonth() === monthDate.getMonth()
+      }).length,
+    }
+  })
+
+  const upcomingAssets = assets
+    .filter((asset) => {
+      const dueDate = new Date(asset.nextScheduledInspection)
+      return !Number.isNaN(dueDate.getTime()) && dueDate >= new Date()
+    })
+    .sort((left, right) => new Date(left.nextScheduledInspection).getTime() - new Date(right.nextScheduledInspection).getTime())
+    .slice(0, 3)
 
   const attentionList = inspections
     .filter(
@@ -100,10 +121,7 @@ export function DashboardView({ onNavigate, onOpenNewInspection }: DashboardView
           <p>Continuous AI-assisted crack & damage monitoring across civil infrastructure assets.</p>
         </div>
         <div className="heading-actions">
-          <button
-            className="button secondary"
-            onClick={() => alert('Summary exported to CSV format (Demo Mode).')}
-          >
+          <button className="button secondary" onClick={() => window.print()}>
             <Download /> Export summary
           </button>
           <button className="button primary" onClick={onOpenNewInspection}>
@@ -112,14 +130,18 @@ export function DashboardView({ onNavigate, onOpenNewInspection }: DashboardView
         </div>
       </section>
 
-      {/* Context & Demo Warning Bar */}
+      {/* Live data status */}
       <div className="context-bar">
         <div className="range">
           <CalendarDays />
-          <span>Last 30 days: Q3 Operational Cycle</span>
+          <span>Live operational data</span>
         </div>
         <span className="sample-note">
-          <Cloud /> Demonstration Data (Local Sandbox Mode)
+          {dataStatus === 'loading'
+            ? 'Connecting to backend…'
+            : dataStatus === 'error'
+              ? `Backend unavailable${lastUpdated ? ` · showing data from ${lastUpdated.toLocaleTimeString()}` : ''}`
+              : `Backend data · seeded rows may be included · updated ${lastUpdated?.toLocaleTimeString()} · refreshes every 15 seconds`}
         </span>
       </div>
 
@@ -135,7 +157,7 @@ export function DashboardView({ onNavigate, onOpenNewInspection }: DashboardView
           <div className="stat-copy">
             <p>Infrastructure assets</p>
             <strong>{assets.length}</strong>
-            <span className="positive">{assets.filter((a) => a.importance.includes('Critical')).length || 2} Critical Priority</span>
+            <span className="positive">{assets.filter((a) => a.importance.includes('Critical')).length} Critical Priority</span>
           </div>
         </div>
 
@@ -149,7 +171,7 @@ export function DashboardView({ onNavigate, onOpenNewInspection }: DashboardView
           <div className="stat-copy">
             <p>Total inspections</p>
             <strong>{inspections.length}</strong>
-            <span className="positive">Active live monitoring</span>
+            <span className="positive">From backend records</span>
           </div>
         </div>
 
@@ -175,7 +197,7 @@ export function DashboardView({ onNavigate, onOpenNewInspection }: DashboardView
             <AlertTriangle />
           </div>
           <div className="stat-copy">
-            <p>High-priority findings</p>
+            <p>High-priority inspections</p>
             <strong>{highPriorityCount}</strong>
             <span className="text-red-500 text-[9px] font-semibold">Priority repair attention</span>
           </div>
@@ -201,9 +223,7 @@ export function DashboardView({ onNavigate, onOpenNewInspection }: DashboardView
             <span>
               <i className="legend-blue" /> Monthly Inspections
             </span>
-            <span className="trend">
-              <ArrowUpRight /> +14.2% cadence
-            </span>
+            <span className="trend">Previous 9 months</span>
           </div>
           <div className="chart">
             <ResponsiveContainer width="100%" height="100%">
@@ -450,29 +470,23 @@ export function DashboardView({ onNavigate, onOpenNewInspection }: DashboardView
               <CalendarDays />
             </div>
 
-            <div className="schedule-row">
-              <div className="date-box">
-                <b>26</b>
-                <small>OCT</small>
-              </div>
-              <div>
-                <strong>Westside Retaining Wall</strong>
-                <p>Routine settlement survey · 09:30 AM</p>
-              </div>
-              <span className="mini-avatar">MV</span>
-            </div>
-
-            <div className="schedule-row">
-              <div className="date-box">
-                <b>28</b>
-                <small>OCT</small>
-              </div>
-              <div>
-                <strong>Highland Reservoir Dam</strong>
-                <p>Spillway crest acoustic inspection · 02:00 PM</p>
-              </div>
-              <span className="mini-avatar teal-avatar">ER</span>
-            </div>
+            {upcomingAssets.length > 0 ? upcomingAssets.map((asset) => {
+              const dueDate = new Date(asset.nextScheduledInspection)
+              return (
+                <div className="schedule-row" key={asset.id}>
+                  <div className="date-box">
+                    <b>{dueDate.getDate()}</b>
+                    <small>{new Intl.DateTimeFormat('en', { month: 'short' }).format(dueDate)}</small>
+                  </div>
+                  <div>
+                    <strong>{asset.name}</strong>
+                    <p>{asset.type} · {dueDate.toLocaleDateString()}</p>
+                  </div>
+                </div>
+              )
+            }) : (
+              <p className="text-xs text-slate-500">No future inspection dates are recorded.</p>
+            )}
           </div>
         </div>
       </section>
