@@ -1,7 +1,8 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.api.v1.auth import router as auth_router
@@ -11,8 +12,9 @@ from app.api.v1.maintenance import router as maintenance_router
 from app.api.v1.models import router as models_router
 from app.api.v1.reports import router as reports_router
 from sqlalchemy import text
-from app.db.session import SessionLocal, engine
+from app.db.session import SessionLocal, engine, get_db
 from app.db.init_db import init_db
+from app.services.media_storage import get_media_from_db
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -35,9 +37,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount uploads static directory
+# Ensure uploads directory exists and serve from disk with PostgreSQL/DB fallback
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+
+
+@app.get("/uploads/{file_path:path}")
+def serve_upload(file_path: str, db: Session = Depends(get_db)):
+    upload_root = os.path.abspath(settings.UPLOAD_DIR)
+    target = os.path.abspath(os.path.join(upload_root, file_path))
+    if not target.startswith(upload_root):
+        raise HTTPException(status_code=403, detail="Invalid upload path")
+    if os.path.isfile(target):
+        return FileResponse(target)
+    media = get_media_from_db(db, f"uploads/{file_path}")
+    if media:
+        return Response(content=media.data, media_type=media.content_type)
+    raise HTTPException(status_code=404, detail="Media file not found")
 
 # Startup database initialization
 @app.on_event("startup")

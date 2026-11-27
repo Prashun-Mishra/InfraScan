@@ -17,6 +17,7 @@ from app.schemas.inspection import (
 from app.services.preprocessing import assess_and_preprocess_image
 from app.services.ai_pipeline import run_inspection_ai_pipeline
 from app.services.report_generator import generate_pdf_report
+from app.services.media_storage import save_media_to_db
 
 router = APIRouter()
 
@@ -125,6 +126,7 @@ def delete_inspection(inspection_id: str, db: Session = Depends(get_db)):
 @router.post("/preprocess")
 async def preprocess_image_endpoint(
     file: UploadFile = File(...),
+    db: Session = Depends(get_db),
 ):
     """
     Run automated image quality assessment and CLAHE contrast enhancement on uploaded survey photo.
@@ -142,6 +144,10 @@ async def preprocess_image_endpoint(
         base_url_prefix="/uploads/preprocessed"
     )
     result["rawUrl"] = f"/uploads/raw/{file.filename}"
+    save_media_to_db(db, result["rawUrl"], file_path)
+    if result.get("preprocessedUrl"):
+        prep_file = os.path.join(prep_dir, os.path.basename(result["preprocessedUrl"]))
+        save_media_to_db(db, result["preprocessedUrl"], prep_file)
     return result
 
 @router.post("/{inspection_id}/analyze")
@@ -185,6 +191,14 @@ def analyze_inspection_image(
 
     image_record = ai_result["image"]
     findings = ai_result["findings"]
+
+    # Persist raw, annotated, mask, and heatmap media files in DB
+    insp_dir = os.path.join(settings.UPLOAD_DIR, "inspections")
+    save_media_to_db(db, image_record.get("url", ""), raw_path)
+    for key in ("annotatedUrl", "maskUrl", "heatmapUrl"):
+        u = image_record.get(key)
+        if u:
+            save_media_to_db(db, u, os.path.join(insp_dir, os.path.basename(u)))
 
     # Persist analysis results into Database
     if insp:

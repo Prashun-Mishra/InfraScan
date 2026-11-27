@@ -1,6 +1,13 @@
 # InfraScan Cloud Deployment Blueprint (Render.com)
 # Milestone 4: Production Deployment Specification
 
+databases:
+  - name: infrascan-db
+    databaseName: infrascan
+    user: infrascan
+    plan: free
+    region: oregon
+
 services:
   # 1. FastAPI AI & Backend Web Service (Docker with OpenCV/libGL + YOLOv11)
   - type: web
@@ -15,6 +22,10 @@ services:
         generateValue: true
       - key: UPLOAD_DIR
         value: "/app/backend/uploads"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: infrascan-db
+          property: connectionString
     healthCheckPath: /health
 
   # 2. Next.js 14 Frontend Web Service

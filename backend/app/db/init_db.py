@@ -7,6 +7,7 @@ from app.models.inspection import Inspection
 from app.models.maintenance import MaintenanceWorkOrder
 from app.models.model_version import ModelVersion
 from app.models.report import InspectionReport
+from app.models.media import MediaFile
 from app.core.security import get_password_hash
 
 DEMO_USERS_SEED = [
